@@ -16,7 +16,7 @@ require_relative 'tellurium_driver.rb'
 # 3. Run the search method on Email. This supports :subject, :from, :body
 #    and will return an array of size two with the first element as the inbox
 #    matching message count and the second as the spambox matching message count
-#         results = email.search({subject:"foo",from:"foo@foo.com",body: "foo",number: 10,seen:"SEEN",date:"1-Apr-2003"})
+#         results = email.search({subject:"foo",from:"foo@foo.com",body: "foo",number: 10,seen:"SEEN",date:"1-Apr-2003",end_when_found: true})
 #  note, options for number 0, infiniti. options for seen: "SEEN" or "UNSEEN" (read/unread basically), date must be in format above
 
 class Email
@@ -119,7 +119,7 @@ include Enumerable
     return html_msg[date_index..(html_msg.size-1)]
   end
 
-  def search_pop3(subject,from,body,number)
+  def search_pop3(subject,from,body,number,end_when_found)
       count = []
       count.push 0
       @pop.start(@username,@password)
@@ -127,6 +127,7 @@ include Enumerable
         if number != 0
           if Email.parse_pop_from(m).grep(/#{from}/)[0] !=nil and Email.parse_pop_subject(m).grep(/#{subject}/)[0] !=nil and Email.parse_pop_body(m).grep(/#{body}/)[0] !=nil
             count[0] += 1 #since we are using pop, it will still return an array so it's similar to the imap function, but the array only has a size of one. This is just for convenience sake, it can be changed
+            return count[0] if end_when_found
           end 
          
           number -= 1
@@ -142,7 +143,7 @@ include Enumerable
     @imap.check
   end
 
-  def search_imap(subject,from,body,number,date,seen)
+  def search_imap(subject,from,body,number,date,seen,end_when_found)
     #make each attribute an empty string if it's nil
     body = "" unless body
     from = "" unless from
@@ -162,32 +163,32 @@ include Enumerable
       search = ["SINCE",date,seen] if seen != ""
       search = ["SINCE",date] if seen == ""
       @imap.search(search).each do |message_id|
-
-        if number != 0
-          message_subject = @imap.fetch(message_id, "BODY[HEADER.FIELDS (SUBJECT)]")[0].to_s
-          
-          if message_subject.include?(subject)
-            message_from = @imap.fetch(message_id, "BODY[HEADER.FIELDS (FROM)]")[0].to_s
+        unless  (end_when_found and results[i] == 1)
+          if number != 0
+              message_subject = @imap.fetch(message_id, "BODY[HEADER.FIELDS (SUBJECT)]")[0].to_s
             
-            if message_from.include?(from)
-              message_body = @imap.fetch(message_id,'BODY[TEXT]')[0].attr['BODY[TEXT]']
+            if message_subject.include?(subject)
+              message_from = @imap.fetch(message_id, "BODY[HEADER.FIELDS (FROM)]")[0].to_s
+            
+              if message_from.include?(from)
+                message_body = @imap.fetch(message_id,'BODY[TEXT]')[0].attr['BODY[TEXT]']
               
-              results[i] +=1 if message_body.include?(body)
-            end
+                results[i] +=1 if message_body.include?(body)
+              end
 
+            end
+            number -=1
           end
-          number -=1
         end
-        
       end
 
       i+=1
     end 
-
+      
     return results
   end  
  
-  def search_owa(subject,from,body,number)
+  def search_owa(subject,from,body,number,end_when_found)
     return nil if @provider == :comcast
     browser = TelluriumDriver.new("1","2","3") 
     begin
@@ -220,6 +221,10 @@ include Enumerable
 
         subject = browser.driver.find_element(:css,".ReadMsgSubject").text
         @number_found += 1 if body.include?("woohoo") and subject.include?("woohoo")
+        if @number_found and end_when_found
+          browser.close
+          return @number_found
+        end
 
         browser.driver.find_element(:css,".i_rm_n").click unless hit_the_one_after == 1
 
@@ -244,8 +249,10 @@ include Enumerable
     seen = args[:seen] if args[:seen] # "SEEN" or "UNSEEN"
     number = -1
     number = args[:number] if args[:number]
-    return search_imap(subject,from,body,number,date,seen) if @provider_info[:method] == "imap"          
-    return [search_pop3(subject,from,body,number),search_owa(subject,from,body,number)] if @provider_info[:method] == "pop3"
+    end_when_found = false
+    end_when_found = true if end_when_found
+    return search_imap(subject,from,body,number,date,seen,end_when_found) if @provider_info[:method] == "imap"          
+    return [search_pop3(subject,from,body,number,end_when_found),search_owa(subject,from,body,number,end_when_found)] if @provider_info[:method] == "pop3"
   end
 
 end
