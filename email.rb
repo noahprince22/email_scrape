@@ -162,10 +162,11 @@ include Enumerable
       #,["SINCE","1-Apr-2003"]
       search = ["SINCE",date,seen] if seen != ""
       search = ["SINCE",date] if seen == ""
-      @imap.search(search).each do |message_id|
+      @imap.search(search).reverse.each do |message_id|
         unless  (end_when_found and results[i] == 1)
           if number != 0
               message_subject = @imap.fetch(message_id, "BODY[HEADER.FIELDS (SUBJECT)]")[0].to_s
+            puts message_subject
             
             if message_subject.include?(subject)
               message_from = @imap.fetch(message_id, "BODY[HEADER.FIELDS (FROM)]")[0].to_s
@@ -179,9 +180,11 @@ include Enumerable
             end
             number -=1
           end
-        end
-      end
 
+        end
+
+      end
+        puts Time.now
       i+=1
     end 
       
